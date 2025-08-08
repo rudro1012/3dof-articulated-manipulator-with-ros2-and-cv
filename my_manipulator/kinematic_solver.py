@@ -12,12 +12,24 @@ init_printing()
 # dh parameter measured form the physical system
 dh_table=[
     {},
-    {'alpha': 0,     'a': 0,    'd': 9.2, 'θ':θ1},
+    {'alpha': 0,     'a': 0,    'd': 0,   'θ':θ1},
     {'alpha': -pi/2, 'a': 1.1,  'd': 0,   'θ':θ2},
     {'alpha': pi,    'a': 10.4, 'd': 0,   'θ':θ3},
     {'alpha': 0,     'a': 13.4, 'd': 0,   'θ':0},
 ]
 
+tfik=Matrix([[1,0,0,11],
+             [0,1,0,20],
+             [0,0,1,3],
+             [0,0,0,1]
+             ])
+
+new_x=0
+if (tfik[0,3]<0):
+    new_x=tfik[0,3]
+    tfik[0,3]=(-1)*tfik[0,3]
+
+print(tfik[0,3])
 # defining general transformation matrix for each frame 
 def matrix(i) :
     
@@ -49,19 +61,23 @@ t34=matrix(4)
 t04=t01*t12*t23*t34
 
 
-tfik=Matrix([[1,0,0,13],
-             [0,1,0,15],
-             [0,0,1,8],
-             [0,0,0,1]
-             ])
 
+
+
+# print(t04[0,3])
+# print(t04[1,3])
+# print(t04[2,3])
 eq1=Eq(t04[0,3],tfik[0,3])
-eq2=Eq(t04[1,3],tfik[0,3])
+print(eq1)
+eq2=Eq(t04[1,3],tfik[1,3])
 eq3=Eq(t04[2,3],tfik[2,3])
 
-solution=solve(eq1,eq2,eq3)
-print(eq1)
+solution=nsolve([eq1,eq2,eq3],(θ1,θ2,θ3),(1.57,1.57,1.57))
 
+if(new_x<0):
+    solution[0,0]=3.1415-solution[0,0]
+
+print(solution)
 
 # x=dh_table[1]['d']
 # y=x*3
