@@ -1,7 +1,8 @@
+from collections import deque
 # trajectory generator
 # θ
 
-def trajectory_funcntion(θi,θf,t,n):
+def cubic_polynomial_trajectory_generator(θi,θf,t,n):
     a0=θi
     a1=0
     a2=3*(θf-θi)/(t**2)
@@ -18,6 +19,10 @@ def trajectory_funcntion(θi,θf,t,n):
 
 
 
-x=trajectory_funcntion(90,60,10,20)
+x=cubic_polynomial_trajectory_generator(90,60,10,20)
+y=cubic_polynomial_trajectory_generator(90,45,5,20)
+z=cubic_polynomial_trajectory_generator(180,40,5,20)
 
-print(x)
+
+Z=list(zip(x,y,z))
+
