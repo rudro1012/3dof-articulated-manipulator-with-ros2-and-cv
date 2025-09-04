@@ -1,4 +1,6 @@
 from collections import deque
+import serial
+import time
 # trajectory generator
 # θ
 
@@ -17,12 +19,27 @@ def cubic_polynomial_trajectory_generator(θi,θf,t,n):
         i=i+1
     return point_list
 
+arduino_data=serial.Serial('/dev/ttyACM0',9600)
+time.sleep(2)
 
 
-x=cubic_polynomial_trajectory_generator(90,60,10,20)
-y=cubic_polynomial_trajectory_generator(90,45,5,20)
-z=cubic_polynomial_trajectory_generator(180,40,5,20)
+def serial_transmit(angle):
+    arduino_data.write(f"{angle}\n".encode())
+   
+joint1_path=cubic_polynomial_trajectory_generator(90,29,10,20)
 
+latest_response=None
+for angle in joint1_path:
+    while True:
+        serial_transmit(angle)
+        print(f"Sending: {angle}")
+        time.sleep(0.1)
 
-Z=list(zip(x,y,z))
+        response=arduino_data.readline().decode().strip()
+        if response=="ACK":
+            print('arduino acknowledged')
+            latest_response=response
+            break
 
+arduino_data.close()
+print(latest_response)
