@@ -23,13 +23,28 @@ arduino_data=serial.Serial('/dev/ttyACM0',9600)
 time.sleep(2)
 
 
+
+
 def serial_transmit(angle):
     arduino_data.write(f"{angle}\n".encode())
    
 joint1_path=cubic_polynomial_trajectory_generator(90,29,10,20)
+joint2_path=cubic_polynomial_trajectory_generator(90,45,10,20)
+joint3_path=cubic_polynomial_trajectory_generator(100,120,10,20)
 
+trajectory_path_op1=list(zip(joint1_path,joint2_path,joint3_path))
+
+
+print(joint1_path)
+print(joint2_path)
+print(joint3_path)
+print(trajectory_path_op1)
 latest_response=None
-for angle in joint1_path:
+
+
+
+
+for angle in trajectory_path_op1:
     while True:
         serial_transmit(angle)
         print(f"Sending: {angle}")
