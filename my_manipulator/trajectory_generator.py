@@ -1,6 +1,7 @@
 from collections import deque
 import serial
 import time
+import sys
 # trajectory generator
 # θ
 
@@ -35,26 +36,47 @@ joint3_path=cubic_polynomial_trajectory_generator(100,120,10,20)
 trajectory_path_op1=list(zip(joint1_path,joint2_path,joint3_path))
 
 
-print(joint1_path)
-print(joint2_path)
-print(joint3_path)
-print(trajectory_path_op1)
-latest_response=None
+# print(joint1_path)
+# print(joint2_path)
+# print(joint3_path)
+# print(trajectory_path_op1)
+# latest_response=None
 
 
+def trajectory_executor(trajectory_path):
+    for angle_set in trajectory_path:
+        while True:
+            serial_transmit(",".join(map(str,angle_set)))
+            print(angle_set)
+            time.sleep(0.1)
+        
+            response=arduino_data.readline().decode().strip()
+            if response== "ACK":
+                print('Arduino Acknowleged')
+                break
+            elif response=="":
+                print('No acknowledgement recieved')
+                sys.exit(1)
 
 
-for angle in trajectory_path_op1:
-    while True:
-        serial_transmit(angle)
-        print(f"Sending: {angle}")
-        time.sleep(0.1)
+def end_eff_execution(trajectory):
+    for angle in trajectory:
+        while True:
+            serial_transmit(angle)
+            print(f"Sending: {angle}")
+            time.sleep(0.1)
 
-        response=arduino_data.readline().decode().strip()
-        if response=="ACK":
-            print('arduino acknowledged')
-            latest_response=response
-            break
+            response=arduino_data.readline().decode().strip()
+            if response=="ACK":
+                print('arduino acknowledged')
+                # latest_response=response
+                break
+            elif response=="":
+                print('No acknowledgement recieved')
+                sys.exit(1)
+
+
+end_eff_execution(joint1_path)
 
 arduino_data.close()
-print(latest_response)
+# print(latest_response)
