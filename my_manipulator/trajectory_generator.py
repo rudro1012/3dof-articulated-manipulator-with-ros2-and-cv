@@ -5,6 +5,17 @@ import sys
 # trajectory generator
 # θ
 
+initial_pos_joint1=90
+initial_pos_joint2=90
+initial_pos_joint3=90
+end_eff_open=90
+end_eff_close=60
+
+delivery_point_joint1=150
+delivery_point_joint2=60
+delivery_point_joint3=50
+
+
 def cubic_polynomial_trajectory_generator(θi,θf,t,n):
     a0=θi
     a1=0
@@ -20,6 +31,31 @@ def cubic_polynomial_trajectory_generator(θi,θf,t,n):
         i=i+1
     return point_list
 
+def end_eff_operation(θi,θf,n):
+    actuation=abs(θi-θf)
+    increment=actuation/n
+    actuation_points=[]
+    if θi<θf:
+        step=θi
+        i=1
+        while(i<=n):
+            step=step+increment
+            step_round=round(step,3)
+            actuation_points.append(step_round)
+            i=i+1
+
+    elif θi>θf:
+        step=θi
+        i=1
+        while(i<=n):
+            step=step-increment
+            step_round=round(step,3)
+            actuation_points.append(step_round)
+            i=i+1
+
+    return actuation_points        
+
+
 arduino_data=serial.Serial('/dev/ttyACM0',9600)
 time.sleep(2)
 
@@ -28,19 +64,33 @@ time.sleep(2)
 
 def serial_transmit(angle):
     arduino_data.write(f"{angle}\n".encode())
-   
-joint1_path=cubic_polynomial_trajectory_generator(90,29,10,20)
-joint2_path=cubic_polynomial_trajectory_generator(90,45,10,20)
-joint3_path=cubic_polynomial_trajectory_generator(100,120,10,20)
-
-trajectory_path_op1=list(zip(joint1_path,joint2_path,joint3_path))
 
 
-# print(joint1_path)
-# print(joint2_path)
-# print(joint3_path)
+# operation 1= reaching to the desired co ordinates  
+joint1_path_op1=cubic_polynomial_trajectory_generator(initial_pos_joint1,29,10,20)
+joint2_path_op1=cubic_polynomial_trajectory_generator(initial_pos_joint2,45,10,20)
+joint3_path_op1=cubic_polynomial_trajectory_generator(initial_pos_joint3,120,10,20)
+end_eff_opening=end_eff_operation(end_eff_close,end_eff_open,20)
+trajectory_path_op1=list(zip(joint1_path_op1,joint2_path_op1,joint3_path_op1,end_eff_opening))
+
+# operation 2= closing the end effector
+end_eff_closing_op2=end_eff_operation(end_eff_open,end_eff_close,20)
+
+# operation 3= reaching to the dump station
+joint1_path_op3=cubic_polynomial_trajectory_generator(29,delivery_point_joint1,10,20)
+joint2_path_op3=cubic_polynomial_trajectory_generator(45,delivery_point_joint2,10,20)
+joint3_path_op3=cubic_polynomial_trajectory_generator(120,delivery_point_joint3,10,20)
+trajectory_path_op3=list(zip(joint1_path_op3,joint2_path_op3,joint3_path_op3))
+
+
+
+# print(joint1_path_op1)
+# print(joint2_path_op1)
+# print(joint3_path_op1)
 # print(trajectory_path_op1)
 # latest_response=None
+# print(end_eff_opening)
+# print(end_eff_closing_op2)
 
 
 def trajectory_executor(trajectory_path):
@@ -76,7 +126,10 @@ def end_eff_execution(trajectory):
                 sys.exit(1)
 
 
-end_eff_execution(joint1_path)
+
+trajectory_executor(trajectory_path_op1)
+end_eff_execution(end_eff_closing_op2)
+trajectory_executor(trajectory_path_op3)
 
 arduino_data.close()
 # print(latest_response)
