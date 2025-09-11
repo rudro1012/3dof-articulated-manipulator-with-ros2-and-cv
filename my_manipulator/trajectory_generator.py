@@ -102,13 +102,13 @@ trajectory_path_op5=list(zip(joint1_path_op5,joint2_path_op5,joint3_path_op5,end
 # print(end_eff_closing_op2)
 
 
-def trajectory_executor(trajectory_path):
+def trajectory_executor(trajectory_path):  # send tuples form trajecotory point list for each joint angle of the corresponding step
     for angle_set in trajectory_path:
-        while True:
-            serial_transmit(",".join(map(str,angle_set)))
-            print(angle_set)
-            time.sleep(0.1)
         
+        serial_transmit(",".join(map(str,angle_set)))
+        print(angle_set)
+        time.sleep(0.1)
+        while True:            
             response=arduino_data.readline().decode().strip()
             if response== "ACK":
                 print('Arduino Acknowleged')
@@ -118,7 +118,7 @@ def trajectory_executor(trajectory_path):
                 sys.exit(1)
 
 
-def end_eff_execution(trajectory):
+def end_eff_execution(trajectory):  #send single joint angle string for end effector actuation
     for angle in trajectory:
         while True:
             serial_transmit(angle)
@@ -135,7 +135,7 @@ def end_eff_execution(trajectory):
                 sys.exit(1)
 
 
-
+#sequensce of operation
 trajectory_executor(trajectory_path_op1)
 end_eff_execution(end_eff_closing_op2)
 trajectory_executor(trajectory_path_op3)
