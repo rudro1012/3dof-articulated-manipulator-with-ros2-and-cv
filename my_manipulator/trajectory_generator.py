@@ -120,11 +120,10 @@ def trajectory_executor(trajectory_path):  # send tuples form trajecotory point 
 
 def end_eff_execution(trajectory):  #send single joint angle string for end effector actuation
     for angle in trajectory:
+        serial_transmit(angle)
+        print(f"Sending: {angle}")
+        time.sleep(0.1)
         while True:
-            serial_transmit(angle)
-            print(f"Sending: {angle}")
-            time.sleep(0.1)
-
             response=arduino_data.readline().decode().strip()
             if response=="ACK":
                 print('arduino acknowledged')
