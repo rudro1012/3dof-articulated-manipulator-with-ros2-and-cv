@@ -82,6 +82,15 @@ joint2_path_op3=cubic_polynomial_trajectory_generator(45,delivery_point_joint2,1
 joint3_path_op3=cubic_polynomial_trajectory_generator(120,delivery_point_joint3,10,20)
 trajectory_path_op3=list(zip(joint1_path_op3,joint2_path_op3,joint3_path_op3))
 
+# operation 4= droping the object
+end_eff_opening_op4=end_eff_operation(end_eff_close,end_eff_open,10)
+
+# operation 5= returning to the initial position
+joint1_path_op5=cubic_polynomial_trajectory_generator(delivery_point_joint1,initial_pos_joint1,10,20)
+joint2_path_op5=cubic_polynomial_trajectory_generator(delivery_point_joint2,initial_pos_joint2,10,20)
+joint3_path_op5=cubic_polynomial_trajectory_generator(delivery_point_joint3,initial_pos_joint3,10,20)
+end_eff_closing_op5=end_eff_operation(end_eff_open,end_eff_close,20)
+trajectory_path_op5=list(zip(joint1_path_op5,joint2_path_op5,joint3_path_op5,end_eff_closing_op5))
 
 
 # print(joint1_path_op1)
@@ -130,6 +139,8 @@ def end_eff_execution(trajectory):
 trajectory_executor(trajectory_path_op1)
 end_eff_execution(end_eff_closing_op2)
 trajectory_executor(trajectory_path_op3)
+end_eff_execution(end_eff_opening_op4)
+trajectory_executor(trajectory_path_op5)
 
 arduino_data.close()
 # print(latest_response)
