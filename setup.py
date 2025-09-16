@@ -20,6 +20,11 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'node_creator=my_manipulator.node_creator:main',
+            'object_detector=my_manipulator.object_detector:main',
+            'kinematic_solver=my_manipulator.kinematic_solver:main',
+            'trajectory_generator=my_manipulator.trajectory_generator:main'
+            
         ],
     },
 )
