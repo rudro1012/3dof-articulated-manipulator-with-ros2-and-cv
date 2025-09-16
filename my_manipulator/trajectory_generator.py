@@ -6,22 +6,22 @@ import serial
 import time
 import sys
 
-class trajectory_generator(Node):
+class TrajectoryGenerator(Node):
     def __init__(self):
         super().__init__('trajectory_generator')
 
-        # Subscriber to trigger execution (from IK node)
+        # Subscriber to receive joint angles from IK node
         self.subscription = self.create_subscription(
             Float32MultiArray,
-            'joint_angles',  # topic from IK node
-            self.trigger_callback,
+            'joint_angles',
+            self.joint_callback,
             10
         )
 
-        # Publisher for executed joint angles (monitoring)
+        # Publisher for executed joint angles (optional)
         self.publisher_ = self.create_publisher(Float32MultiArray, 'executed_joint_angles', 10)
 
-        # Initialize serial
+        # Serial connection to Arduino
         try:
             self.arduino_data = serial.Serial('/dev/ttyACM0', 9600)
             time.sleep(2)
@@ -30,32 +30,35 @@ class trajectory_generator(Node):
             self.get_logger().error(f"Failed to connect to Arduino: {e}")
             sys.exit(1)
 
-        # Initial positions
-        self.initial_pos = [90, 90, 90, 90]   # last is end-effector
-        self.end_eff_open = 90
-        self.end_eff_close = 60
-        self.delivery_point = [150, 60, 50]
+        self.busy = False  # flag to prevent handling new messages while executing
 
-        # Busy flag to prevent multiple triggers
-        self.busy = False
-
-    # ===== Trajectory generators =====
+    # Cubic polynomial trajectory generator
     def cubic_polynomial_trajectory_generator(self, θi, θf, t, n):
         a0 = θi
         a1 = 0
         a2 = 3*(θf-θi)/(t**2)
         a3 = -2*(θf-θi)/(t**3)
-        return [round(a0 + a1*(i*t/n) + a2*(i*t/n)**2 + a3*(i*t/n)**3, 3) for i in range(1, n+1)]
+        point_list = []
+        for i in range(1, n+1):
+            step = i*t/n
+            step_inc = a0 + a1*step + a2*step**2 + a3*step**3
+            point_list.append(round(step_inc,3))
+        return point_list
 
+    # End-effector trajectory
     def end_eff_operation(self, θi, θf, n):
-        increment = (θf - θi)/n
-        return [round(θi + increment*(i+1),3) for i in range(n)]
+        increment = (θf-θi)/n
+        actuation_points = []
+        for i in range(n):
+            step = θi + increment*(i+1)
+            actuation_points.append(round(step,3))
+        return actuation_points
 
-    # ===== Serial transmission =====
+    # Send data to Arduino
     def serial_transmit(self, angle_data):
         self.arduino_data.write(f"{angle_data}\n".encode())
 
-    # ===== Execution functions =====
+    # Execute a full trajectory of joint tuples
     def trajectory_executor(self, trajectory_path):
         for angle_set in trajectory_path:
             self.serial_transmit(",".join(map(str, angle_set)))
@@ -68,11 +71,12 @@ class trajectory_generator(Node):
                 elif response == "":
                     self.get_logger().error("No acknowledgement received")
                     sys.exit(1)
-            # Publish executed angles
+            # Optional: publish executed angles
             msg = Float32MultiArray()
             msg.data = list(angle_set)
             self.publisher_.publish(msg)
 
+    # Execute end-effector only
     def end_eff_execution(self, trajectory):
         for angle in trajectory:
             self.serial_transmit(angle)
@@ -86,58 +90,41 @@ class trajectory_generator(Node):
                     self.get_logger().error("No acknowledgement received")
                     sys.exit(1)
 
-    # ===== Trigger callback =====
-    def trigger_callback(self, msg):
+    # Event-based callback for new joint angles
+    def joint_callback(self, msg):
         if self.busy:
-            self.get_logger().warn("Trajectory in progress, ignoring new trigger")
+            self.get_logger().info("Trajectory execution in progress, ignoring new message")
             return
 
         self.busy = True
-        self.get_logger().info("Trigger received: executing full trajectory")
+        self.get_logger().info("New joint angles received, executing trajectory")
 
-        # --- Operation 1: move to pick ---
-        joint1_path_op1 = self.cubic_polynomial_trajectory_generator(self.initial_pos[0], 29, 10, 20)
-        joint2_path_op1 = self.cubic_polynomial_trajectory_generator(self.initial_pos[1], 45, 10, 20)
-        joint3_path_op1 = self.cubic_polynomial_trajectory_generator(self.initial_pos[2], 120, 10, 20)
-        end_eff_opening = self.end_eff_operation(self.end_eff_close, self.end_eff_open, 20)
-        trajectory_path_op1 = list(zip(joint1_path_op1, joint2_path_op1, joint3_path_op1, end_eff_opening))
-        self.trajectory_executor(trajectory_path_op1)
+        # Assume msg.data = [joint1, joint2, joint3, end_effector]
+        target_joints = msg.data
+        initial_joints = [90, 90, 90, 90]  # modify if needed
 
-        # --- Operation 2: close end-effector ---
-        end_eff_closing_op2 = self.end_eff_operation(self.end_eff_open, self.end_eff_close, 20)
-        self.end_eff_execution(end_eff_closing_op2)
+        # Operation 1: move to pick position
+        joint1_path = self.cubic_polynomial_trajectory_generator(initial_joints[0], target_joints[0], 5, 40)
+        joint2_path = self.cubic_polynomial_trajectory_generator(initial_joints[1], target_joints[1], 5, 40)
+        joint3_path = self.cubic_polynomial_trajectory_generator(initial_joints[2], target_joints[2], 5, 40)
+        end_eff_path = self.end_eff_operation(initial_joints[3], target_joints[3], 40)
+        trajectory_path = list(zip(joint1_path, joint2_path, joint3_path, end_eff_path))
+        self.trajectory_executor(trajectory_path)
 
-        # --- Operation 3: move to delivery ---
-        joint1_path_op3 = self.cubic_polynomial_trajectory_generator(29, self.delivery_point[0], 10, 20)
-        joint2_path_op3 = self.cubic_polynomial_trajectory_generator(45, self.delivery_point[1], 10, 20)
-        joint3_path_op3 = self.cubic_polynomial_trajectory_generator(120, self.delivery_point[2], 10, 20)
-        trajectory_path_op3 = list(zip(joint1_path_op3, joint2_path_op3, joint3_path_op3))
-        self.trajectory_executor(trajectory_path_op3)
-
-        # --- Operation 4: drop object ---
-        end_eff_opening_op4 = self.end_eff_operation(self.end_eff_close, self.end_eff_open, 10)
-        self.end_eff_execution(end_eff_opening_op4)
-
-        # --- Operation 5: return to initial ---
-        joint1_path_op5 = self.cubic_polynomial_trajectory_generator(self.delivery_point[0], self.initial_pos[0], 10, 20)
-        joint2_path_op5 = self.cubic_polynomial_trajectory_generator(self.delivery_point[1], self.initial_pos[1], 10, 20)
-        joint3_path_op5 = self.cubic_polynomial_trajectory_generator(self.delivery_point[2], self.initial_pos[2], 10, 20)
-        end_eff_closing_op5 = self.end_eff_operation(self.end_eff_open, self.end_eff_close, 20)
-        trajectory_path_op5 = list(zip(joint1_path_op5, joint2_path_op5, joint3_path_op5, end_eff_closing_op5))
-        self.trajectory_executor(trajectory_path_op5)
-
-        # --- Wait 2 seconds before accepting new trigger ---
+        # Pause 2 seconds at the target
+        self.get_logger().info("Trajectory completed, waiting 2 seconds")
         time.sleep(2)
+
         self.busy = False
-        self.get_logger().info("Trajectory completed. Node ready for new trigger.")
+        self.get_logger().info("Ready for next joint angles")
 
 def main(args=None):
     rclpy.init(args=args)
-    node = trajectory_generator()
+    node = TrajectoryGenerator()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info("Shutting down Trajectory Node...")
+        node.get_logger().info("Shutting down TrajectoryGenerator node...")
     finally:
         node.arduino_data.close()
         node.destroy_node()
