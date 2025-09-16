@@ -3,15 +3,15 @@
 import rclpy
 from rclpy.node import Node
 
-class myNode(Node):
+class node_creator(Node):
     
     def __init__(self):
-        super().__init__("kinematics_node")
+        super().__init__("node_creator")
         self.get_logger().info('Hello')
 
 def main(args=None):
     rclpy.init(args=args)
-    node=myNode()
+    node=node_creator()
     rclpy.spin(node)
     rclpy.shutdown()
 
