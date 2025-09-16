@@ -1,4 +1,4 @@
-#!/Thesis_ws/bin/tvm python3
+#!/home/samiul/Thesis_ws/tvm/bin/python3
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -11,7 +11,7 @@ from ultralytics import YOLO
 
 class object_detector(Node):
     def __init__(self):
-        super().__init__('detection_node')
+        super().__init__('object_detector')
 
         
         self.publisher_ = self.create_publisher(Float32MultiArray, 'object_position', 10)
@@ -20,7 +20,10 @@ class object_detector(Node):
         # self.subscription_ = self.create_subscription(String, 'motion_status', self.motion_callback, 10)
         self.cap = cv2.VideoCapture(0)
         self.bridge = CvBridge()
-        self.model = YOLO('../../../../../Vision_system/mymodel/runs/detect/train4/weights/best.pt')
+        # self.model = YOLO('../../../../../Vision_system/mymodel/runs/detect/train4/weights/best.pt')
+        # Inside object_detector.py
+        self.model = YOLO('/home/samiul/Thesis_ws/System/Vision_system/mymodel/runs/detect/train4/weights/best.pt')
+
         self.names = self.model.names
 
         self.timer = self.create_timer(0.05, self.detect_objects)  
