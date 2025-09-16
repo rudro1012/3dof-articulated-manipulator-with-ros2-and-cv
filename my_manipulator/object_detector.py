@@ -9,7 +9,7 @@ import math
 from cv_bridge import CvBridge
 from ultralytics import YOLO
 
-class DetectionNode(Node):
+class object_detector(Node):
     def __init__(self):
         super().__init__('detection_node')
 
@@ -20,7 +20,7 @@ class DetectionNode(Node):
         # self.subscription_ = self.create_subscription(String, 'motion_status', self.motion_callback, 10)
         self.cap = cv2.VideoCapture(0)
         self.bridge = CvBridge()
-        self.model = YOLO('../mymodel/runs/detect/train4/weights/best.pt')
+        self.model = YOLO('../../../../../Vision_system/mymodel/runs/detect/train4/weights/best.pt')
         self.names = self.model.names
 
         self.timer = self.create_timer(0.05, self.detect_objects)  
@@ -71,7 +71,7 @@ class DetectionNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = DetectionNode()
+    node = object_detector()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
