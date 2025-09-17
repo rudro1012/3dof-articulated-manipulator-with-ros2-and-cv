@@ -6,7 +6,7 @@ from ikpy.chain import Chain
 from ikpy.link import OriginLink, URDFLink
 import numpy as np
 
-# Function to declare a joint
+# Function to define a joint
 def joint_description(joint_name: str, alpha: float, a: float, d: float, theta: float,
                       lower_limit: float, higher_limit: float):
     for var_value in [alpha, a, d, theta, lower_limit, higher_limit]:
@@ -24,12 +24,19 @@ class KinematicSolver(Node):
     def __init__(self):
         super().__init__('kinematic_solver')
 
-        # Subscriber to receive object positions
+        # Subscriber with depth=1 (latest message only)
+        from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
+        qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+
         self.subscription = self.create_subscription(
             Float32MultiArray,
-            'object_position',  # topic from object detection node
+            'object_position',
             self.object_callback,
-            10
+            qos_profile
         )
 
         # Publisher for joint angles
@@ -46,39 +53,34 @@ class KinematicSolver(Node):
             links=[OriginLink(), joint1, joint2, joint3, end_eff]
         )
 
-        self.get_logger().info("KinematicSolver node initialized and ready for coordinates.")
+        self.get_logger().info("KinematicSolver node initialized. Waiting for coordinates...")
 
     def object_callback(self, msg):
-        # Check if message has enough data
+        # Only compute IK if a new message arrives
         if len(msg.data) < 2:
             self.get_logger().warn("Received object_position message with insufficient data")
             return
 
-        # Read x and y from message
         x, y = msg.data[0], msg.data[1]
+        z = 3.0  # fixed height
 
-        # Fixed z-coordinate
-        z = 3.0
+        self.get_logger().info(f"New coordinate received: x={x}, y={y}, z={z}")
 
-        self.get_logger().info(f"New object coordinate received: x={x}, y={y}, z={z}")
-
-        # Compute joint angles using IK
-        desired_position = [x, y, z]
+        # Compute joint angles
         try:
-            joint_angles_rad = self.chain.inverse_kinematics(desired_position)
+            joint_angles_rad = self.chain.inverse_kinematics([x, y, z])
         except Exception as e:
             self.get_logger().error(f"IK computation failed: {e}")
             return
 
-        # Convert joint angles from radians to degrees
         joint_angles_deg = [round(angle * 180 / np.pi, 3) for angle in joint_angles_rad]
 
-        # Publish joint angles
-        angles_msg = Float32MultiArray()
-        angles_msg.data = joint_angles_deg
-        self.publisher_.publish(angles_msg)
+        # Publish joint angles **only once per new message**
+        msg_out = Float32MultiArray()
+        msg_out.data = joint_angles_deg
+        self.publisher_.publish(msg_out)
 
-        self.get_logger().info(f"Published joint angles (deg): {joint_angles_deg}")
+        self.get_logger().info(f"Published joint angles: {joint_angles_deg}")
 
 def main(args=None):
     rclpy.init(args=args)
