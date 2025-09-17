@@ -24,7 +24,7 @@ class YoloPublisher(Node):
         self.get_logger().info(f"Camera resolution: {int(width)} x {int(height)}")
 
         # Timer for loop (30 Hz)
-        self.timer = self.create_timer(1.0 / 30.0, self.timer_callback)
+        self.timer = self.create_timer(0.5, self.timer_callback)
 
     def timer_callback(self):
         success, img = self.cap.read()

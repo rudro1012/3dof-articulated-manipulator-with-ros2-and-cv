@@ -34,7 +34,7 @@ class KinematicSolver(Node):
 
         self.subscription = self.create_subscription(
             Float32MultiArray,
-            'object_position',
+            'detected_xy',
             self.object_callback,
             qos_profile
         )
