@@ -16,12 +16,19 @@ class object_detector(Node):
         #defining the detection model
         self.model=YOLO('/home/samiul/Thesis_ws/System/Vision_system/mymodel/runs/detect/train4/weights/best.pt')
         self.names=self.model.names
+
+        # fixing camera index
         self.cap=cv2.VideoCapture(0)
+
+        # getting information on fame height and width
         width=self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
         height=self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
         self.get_logger().info(f"camera resolution is {int(width)} x {int(height)}")
+
+        # getting callback fucntion in every 0.1 second
         self.timer=self.create_timer(0.1,self.timer_callback)
     
+    # defining timercallback   
     def timer_callback(self):
         success, img=self.cap.read()
         if not success:
@@ -45,22 +52,27 @@ class object_detector(Node):
                 Y=yn-5
                 print(X,Y)
 
-
+                # co ordinate message
                 msg=Float32MultiArray()
                 msg.data=[float(X),float(Y)]
                 self.publisher.publish(msg)
                 
                 conf=math.ceil(box.conf[0]*100)/100
                 class_id=int(box.cls[0])
-                cvzone.putTextRect(img,f"{self.names[class_id]}",(max(0,x1),max,(35,y1)),scale=1,thickness=1)=
+                cvzone.putTextRect(img,f"{self.names[class_id]} {conf}",(max(0,x1),max(35,y1)),scale=1,thickness=1)
         cv2.imshow('Obejct detection',img)
         cv2.waitKey(1)
 
 def main(args=None):
     rclpy.init(args=args)
     node=object_detector()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    finally:
+        node.cap.release()
+        cv2.destroyAllWindows()
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__=='__main__':
     main()
