@@ -6,6 +6,7 @@
   <description>TODO: Package description</description>
   <maintainer email="samiulislamrudro75754@gmail.com">samiul</maintainer>
   <license>TODO: License declaration</license>
+  <depend>rclpy</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
