@@ -53,9 +53,9 @@ class object_detector(Node):
                 print(X,Y)
 
                 # co ordinate message
-                msg=Float32MultiArray()
-                msg.data=[float(X),float(Y)]
-                self.publisher.publish(msg)
+                position=Float32MultiArray()
+                position.data=[float(X),float(Y)]
+                self.publisher.publish(position)
                 
                 conf=math.ceil(box.conf[0]*100)/100
                 class_id=int(box.cls[0])
