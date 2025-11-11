@@ -1,162 +1,217 @@
 #!/home/samiul/Thesis_ws/tvm/bin/python3
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
-import serial
+import numpy as np
 import time
+from std_msgs.msg import Float32MultiArray,Bool
 import sys
+import serial
 
-# ------------------ ROS 2 Node ------------------ #
-class TrajectoryExecutorNode(Node):
+class trajectory_node(Node):
     def __init__(self):
-        super().__init__('trajectory_executor_node')
-        self.subscription = self.create_subscription(
-            Float32MultiArray,
-            'joint_angles',
-            self.joint_callback,
-            10
-        )
-        self.get_logger().info("Trajectory Executor Node Initialized!")
+        super().__init__('trajectory_node')
+        self.joint_subscriber=self.create_subscription(Float32MultiArray,'angles',self.joint_callback,10)
+        self.busy_publisher=self.create_publisher(Bool,'status',10)
+        self.get_logger().info('trajectory executor initiated')
 
-        # Serial setup
         try:
-            self.arduino_data = serial.Serial('/dev/ttyACM0', 9600)
-            time.sleep(2)
+            self.arduino_data=serial.Serial('/dev/ttyACM0', 9600,timeout=5)
         except Exception as e:
-            self.get_logger().error(f"Serial Error: {e}")
+            self.get_logger().info(f'serial error:{e}')
             sys.exit(1)
 
-        # Flag to avoid re-running sequence
-        self.sequence_running = False
+        self.arm_in_motion=False
+    
+    def joint_callback(self,angles):
+        if self.arm_in_motion:
+            return
+        
+        self.arm_in_motion=True
+        self.status_publisher(self.arm_in_motion)
+        
+        joint_angles=angles.data
+        self.get_logger().info(f'joint angles recieved :{joint_angles}')
 
-    # ------------------ Joint Callback ------------------ #
-    def joint_callback(self, msg):
-        if self.sequence_running:
-            return  # Ignore new values while sequence is running
+        self.sequence_execution(joint_angles)
 
-        self.sequence_running = True
-        joint_angles = msg.data
+        self.arm_in_motion=False
+        self.status_publisher(self.arm_in_motion)
 
-        # IKPy adds extra links at first and last -> ignore
-        real_joints = joint_angles[1:-1]
-        self.get_logger().info(f"Received joint angles: {real_joints}")
+    def status_publisher(self,state):
+        msg=Bool()
+        msg.data=state
+        self.busy_publisher.publish(msg)
+    
 
-        # Run the full manipulator sequence
-        self.execute_full_sequence(real_joints)
-
-    # ------------------ Trajectory Generators ------------------ #
-    def cubic_polynomial_trajectory_generator(self, θi, θf, t, n):
+    def trajectory_generator(self, θi:float, θf:float, t:float, n):
         a0 = θi
         a1 = 0
         a2 = 3*(θf-θi)/(t**2)
         a3 = -2*(θf-θi)/(t**3)
-        point_list = [round(θi,3)]  # start exactly at θi
-        for i in range(1, n+1):
-            step = i*t/n
-            point_list.append(round(a0 + a1*step + a2*step**2 + a3*step**3, 3))
-        return point_list
+        via_points=[]
+        i=1
+        while(i<=n):
+            step=i*t/n
+            actuator_position=round(a0 + a1*step + a2*step**2 + a3*step**3, 2)
+            via_points.append(actuator_position)
+            i=i+1
 
-    def end_eff_operation(self, θi, θf, n):
-        actuation = abs(θi-θf)
-        increment = actuation/n
-        points = [round(θi,3)]
-        if θi < θf:
-            step = θi
-            for _ in range(1, n+1):
-                step += increment
-                points.append(round(step,3))
-        else:
-            step = θi
-            for _ in range(1, n+1):
-                step -= increment
-                points.append(round(step,3))
-        return points
+        return via_points
+    
 
-    # ------------------ Serial Transmission ------------------ #
-    def serial_transmit(self, angle_set):
-        # Prevent duplicate sends
-        if not hasattr(self, 'last_sent') or self.last_sent != angle_set:
-            self.arduino_data.write(f"{','.join(map(str, angle_set))}\n".encode())
-            self.last_sent = angle_set
-            self.get_logger().info(f"Sending: {angle_set}")
-            time.sleep(0.1)
-            while True:
-                response = self.arduino_data.readline().decode().strip()
-                if response == "ACK":
-                    self.get_logger().info("Arduino acknowledged")
-                    break
-                elif response == "":
-                    self.get_logger().warn("No acknowledgement received")
-                    sys.exit(1)
+    def ee_actuation(self,θi:float,θf:float,n):
+        actuation=abs(θi-θf)
+        increment=actuation/n
+        actuation_points=[]
+        if θi<θf:
+            step=θi
+            i=1
+            while(i<=n):
+                step=step+increment
+                step_round=float(round(step,2))
+                actuation_points.append(step_round)
+                i=i+1
 
-    # ------------------ Trajectory Executor ------------------ #
-    def execute_trajectory(self, trajectory_path):
+        elif θi>θf:
+            step=θi
+            i=1
+            while(i<=n):
+                step=step-increment
+                step_round=round(step,2)
+                actuation_points.append(step_round)
+                i=i+1
+
+        return actuation_points   
+    
+
+    def trajectory_execution(self,trajectory_path):
         for angle_set in trajectory_path:
             self.serial_transmit(angle_set)
+    
 
-    # ------------------ Full Sequence ------------------ #
-    def execute_full_sequence(self, joints):
-        # joints = [joint1, joint2, joint3] from topic
-        j1, j2, j3 = joints
-        end_eff_open = 70
-        end_eff_close = 110
-        via_point_j1, via_point_j2, via_point_j3 = 150, 60, 50
-        delivery_j1, delivery_j2, delivery_j3 = 150, 20, 20
-        t, n = 5, 40
+    def ee_motion_execution(self,angle_set):
+        for angle in angle_set:
+            self.ee_point_transmit(angle)
 
-        # --- Operation 1: move to target --- #
-        joint1_path_op1 = self.cubic_polynomial_trajectory_generator(j1, via_point_j1, t, n)
-        joint2_path_op1 = self.cubic_polynomial_trajectory_generator(j2, via_point_j2, t, n)
-        joint3_path_op1 = self.cubic_polynomial_trajectory_generator(j3, via_point_j3, t, n)
-        end_eff_opening = self.end_eff_operation(end_eff_close, end_eff_open, n)
-        trajectory_op1 = list(zip(joint1_path_op1, joint2_path_op1, joint3_path_op1, end_eff_opening))
-        self.execute_trajectory(trajectory_op1)
+    def serial_transmit(self,angle_set):
+        if not hasattr(self,'last_arm_value') or self.last_arm_value!=angle_set:
+            str_angles=f"{','.join(map(str,angle_set))}\n"
+            self.arduino_data.write(str_angles.encode())
+            self.last_arm_value=angle_set
+            self.get_logger().info(f'sent angls:{angle_set}')
+            while(True):
+                arduino_response=self.arduino_data.readline().decode().strip()
+                if arduino_response=='ACK':
+                    self.get_logger().info('acknowledgement recieved for arm')
+                    break
 
-        # --- Operation 2: close end effector --- #
-        end_eff_closing = self.end_eff_operation(end_eff_open, end_eff_close, n)
-        self.execute_trajectory([(0,0,0,angle) for angle in end_eff_closing])  # only end effector moves
+                elif arduino_response=='':
+                    self.get_logger().info('no acknowledgment recieved for arm')
+                    sys.exit(1)
+    
+    
+    def ee_point_transmit(self,angle):
+        if not hasattr(self,'last_ee_value') or self.last_ee_value !=angle:
+            str_angle=f"{angle:.2f}\n"
+            self.arduino_data.write(str_angle.encode())
+            self.get_logger().info(f'end effector is at:{angle}')
+            self.last_ee_value=angle
+            while(True):
+                arduino_response=self.arduino_data.readline().decode().strip()
+                if arduino_response=='ACK':
+                    self.get_logger().info('acknowledgment recieved for end effector')
+                    break
+                
+                else:
+                    self.get_logger().info('no acknowledgment recieved')
+                    sys.exit(1)
+    
 
-        # --- Operation 3: move to delivery via point --- #
-        joint1_path_op3 = self.cubic_polynomial_trajectory_generator(via_point_j1, delivery_j1, t, n)
-        joint2_path_op3 = self.cubic_polynomial_trajectory_generator(via_point_j2, delivery_j2, t, n)
-        joint3_path_op3 = self.cubic_polynomial_trajectory_generator(via_point_j3, delivery_j3, t, n)
-        trajectory_op3 = list(zip(joint1_path_op3, joint2_path_op3, joint3_path_op3))
-        self.execute_trajectory(trajectory_op3)
+    def sequence_execution(self,joints):
 
-        # --- Operation 4: open end effector to drop object --- #
-        end_eff_opening_op4 = self.end_eff_operation(end_eff_close, end_eff_open, n)
-        self.execute_trajectory([(0,0,0,angle) for angle in end_eff_opening_op4])
+        joint1=joints[0]
+        joint2=joints[1]
+        joint3=joints[2]
 
-        # --- Operation 5: return to initial positions --- #
-        joint1_path_op5 = self.cubic_polynomial_trajectory_generator(delivery_j1, j1, t, n)
-        joint2_path_op5 = self.cubic_polynomial_trajectory_generator(delivery_j2, j2, t, n)
-        joint3_path_op5 = self.cubic_polynomial_trajectory_generator(delivery_j3, j3, t, n)
-        end_eff_closing_op5 = self.end_eff_operation(end_eff_open, end_eff_close, n)
-        trajectory_op5 = list(zip(joint1_path_op5, joint2_path_op5, joint3_path_op5, end_eff_closing_op5))
-        self.execute_trajectory(trajectory_op5)
+        initial_pos_joint1=90.0
+        initial_pos_joint2=120.0
+        initial_pos_joint3=120.0
 
-        # --- 4-second rest after full sequence --- #
-        self.get_logger().info("Sequence complete. Resting for 4 seconds...")
-        time.sleep(4)
-        self.sequence_running = False
+        via_point_joint1=150.0
+        via_point_joint2=60.0
+        via_point_joint3=50.0
 
-        self.get_logger().info("Ready for new joint angles.")
+        drop_point_joint1=180.0
+        drop_point_joint2=20.0
+        drop_point_joint3=150.0
 
-    def destroy_node_safe(self):
-        self.arduino_data.close()
-        self.destroy_node()
+        ee_open=70.0
+        ee_close=110.0
 
-# ------------------ Main ------------------ #
+        # object pickup
+        joint1_path_pickup=self.trajectory_generator(initial_pos_joint1,joint1,10,40)
+        joint2_path_pickup=self.trajectory_generator(initial_pos_joint2,joint2,10,40)
+        joint3_path_pickup=self.trajectory_generator(initial_pos_joint3,joint3,10,40)
+        ee_open_pickup=self.ee_actuation(ee_close,ee_open,40)
+
+        pickup_op1=list(zip(joint1_path_pickup,joint2_path_pickup,joint3_path_pickup,ee_open_pickup))
+        
+        # object grabbing
+        ee_close_grab_op2=self.ee_actuation(ee_open,ee_close,20)
+
+        # moving to intermidiate points
+        joint1_path_intrm=self.trajectory_generator(joint1,via_point_joint1,10,40)
+        joint2_path_intrm=self.trajectory_generator(joint2,via_point_joint2,10,40)
+        joint3_path_intrm=self.trajectory_generator(joint3,via_point_joint3,10,40)
+
+        intrm_op3=list(zip(joint1_path_intrm,joint2_path_intrm,joint3_path_intrm))
+
+        # moving to dropping points
+        joint1_path_drop=self.trajectory_generator(via_point_joint1,drop_point_joint1,10,40)
+        joint2_path_drop=self.trajectory_generator(via_point_joint2,drop_point_joint2,10,40)
+        joint3_path_drop=self.trajectory_generator(via_point_joint3,drop_point_joint3,10,40)
+        
+        drop_op4=list(zip(joint1_path_drop,joint2_path_drop,joint3_path_drop))
+
+        # dropping the object
+        ee_open_drop_op5=self.ee_actuation(ee_close,ee_open,20)
+
+        # returning to the initial position
+        joint1_path_return=self.trajectory_generator(drop_point_joint1,initial_pos_joint1,10,40)
+        joint2_path_return=self.trajectory_generator(drop_point_joint2,initial_pos_joint2,10,40)
+        joint3_path_return=self.trajectory_generator(drop_point_joint3,initial_pos_joint3,10,40)
+
+        ee_return=self.ee_actuation(ee_open,ee_close,40)
+
+        return_op6=list(zip(joint1_path_return,joint2_path_return,joint3_path_return,ee_return))
+
+        # arm is moving to the desired position with 4 joint actuation
+        self.trajectory_execution(pickup_op1)
+
+        # end effector is grabbing object
+        self.ee_motion_execution(ee_close_grab_op2)
+
+        # arm is moving to the intermidiate points
+        self.trajectory_execution(intrm_op3)
+
+        # arm is moving to the dropping point
+        self.trajectory_execution(drop_op4)
+
+        # end effector is releasing the object in drop zone
+        self.ee_motion_execution(ee_open_drop_op5)
+
+        # arm is moving back to its initial postion
+        self.trajectory_execution(return_op6)
+
 def main(args=None):
     rclpy.init(args=args)
-    node = TrajectoryExecutorNode()
+    node=trajectory_node()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
-        node.get_logger().info("Shutting down...")
     finally:
-        node.destroy_node_safe()
+        node.destroy_node()
         rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__=='__main__':
     main()

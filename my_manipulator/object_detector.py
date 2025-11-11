@@ -6,12 +6,17 @@ import cv2
 import cvzone
 import math
 from ultralytics import YOLO
+from std_msgs.msg import Bool
 
 
 class object_detector(Node):
     def __init__(self):
         super().__init__("object_detector")
-        self.publisher=self.create_publisher(Float32MultiArray, 'coordinates',10)     
+        self.publisher=self.create_publisher(Float32MultiArray, 'coordinates',10)  
+
+        # checking arm status
+        self.busy_status=False
+        self.status_subscriber=self.create_subscription(Bool,'status',self.status_callback,1)   
         
         #defining the detection model
         self.model=YOLO('/home/samiul/Thesis_ws/System/Vision_system/mymodel/runs/detect/train4/weights/best.pt')
@@ -27,12 +32,19 @@ class object_detector(Node):
 
         # getting callback fucntion in every 0.1 second
         self.timer=self.create_timer(0.1,self.timer_callback)
-    
+
+
+    def status_callback(self, msg):
+        self.busy_status=msg.data
+
     # defining timercallback   
     def timer_callback(self):
+
+        if self.busy_status:  #if arm is busy then the detection will pause
+            return
         success, img=self.cap.read()
         if not success:
-            self.get_logger('camera couldnt be open')
+            self.get_logger('camera couldnt be open')  #checking if camera is working or not
             return
         results=self.model(img,stream=True)
         for r in results:
@@ -44,7 +56,8 @@ class object_detector(Node):
                 h=abs(y1-y2)
                 cvzone.cornerRect(img,(x1,y1,w,h),l=8)
 
-                sx=60/640
+                #proportion for equivalent distance on physical surface
+                sx=60/640   
                 sy=32/360
                 xn=sx*(x1+x2)/2
                 yn=sy*(y1+y2)/2
@@ -53,13 +66,15 @@ class object_detector(Node):
                 print(X,Y)
 
                 # co ordinate message
-                msg=Float32MultiArray()
-                msg.data=[float(X),float(Y)]
-                self.publisher.publish(msg)
+                position=Float32MultiArray()
+                position.data=[float(X),float(Y)]
+                self.publisher.publish(position)
                 
+                # detection confidence for objects
                 conf=math.ceil(box.conf[0]*100)/100
                 class_id=int(box.cls[0])
                 cvzone.putTextRect(img,f"{self.names[class_id]} {conf}",(max(0,x1),max(35,y1)),scale=1,thickness=1)
+
         cv2.imshow('Obejct detection',img)
         cv2.waitKey(1)
 

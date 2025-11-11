@@ -1,97 +1,107 @@
 #!/home/samiul/Thesis_ws/tvm/bin/python3
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
 from ikpy.chain import Chain
 from ikpy.link import OriginLink, URDFLink
+from std_msgs.msg import Float32MultiArray
 import numpy as np
+from rclpy.qos import QoSProfile,QoSHistoryPolicy, QoSReliabilityPolicy
 
-# Function to define a joint
-def joint_description(joint_name: str, alpha: float, a: float, d: float, theta: float,
-                      lower_limit: float, higher_limit: float):
-    for var_value in [alpha, a, d, theta, lower_limit, higher_limit]:
-        if not isinstance(var_value, float):
-            raise TypeError(f'{var_value} has to be a float')
-    return URDFLink(
-        name=joint_name,
-        origin_translation=[a, 0, d],
-        origin_orientation=[alpha, 0, theta],
-        rotation=[0, 0, 1],
-        bounds=[lower_limit, higher_limit]
-    )
 
-class KinematicSolver(Node):
+class kinematic_solver(Node):
     def __init__(self):
-        super().__init__('kinematic_solver')
+        super().__init__('kinematic_solver') #node name
 
-        # Subscriber with depth=1 (latest message only)
-        from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
-        qos_profile = QoSProfile(
+
+        # defining qos prfile for controlled communication
+        qos_profile=QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1
         )
 
-        self.subscription = self.create_subscription(
-            Float32MultiArray,
-            'detected_xy',
-            self.object_callback,
-            qos_profile
-        )
+        # subscription to the coordinate topic for position
+        self.subscription=self.create_subscription(Float32MultiArray, 'coordinates', self.send_angles,qos_profile)
+        
+        #publishing joint angles for trajectory
+        self.publisher=self.create_publisher(Float32MultiArray, 'angles',qos_profile)
 
-        # Publisher for joint angles
-        self.publisher_ = self.create_publisher(Float32MultiArray, 'joint_angles', 10)
+        # defing joint parameters
+        joint1=self.joint_description('joint1',  0.0    , 0.0 , 0.0, 0.0, 0.0, np.pi)
+        joint2=self.joint_description('joint2', -np.pi/2, 1.1 , 0.0, 0.0, 0.0, np.pi)
+        joint3=self.joint_description('joint3',  np.pi  , 10.4, 0.0, 0.0, 0.0, np.pi)
+        endeff=self.joint_description('joint4',  0.0    , 13.4, 0.0, 0.0, 0.0, np.pi)
 
-        # Create manipulator chain
-        joint1 = joint_description('joint1', 0.0, 0.0, 0.0, 0.0, 0.0, np.pi)
-        joint2 = joint_description('joint2', -np.pi/2, 1.1, 0.0, 0.0, 0.0, np.pi)
-        joint3 = joint_description('joint3', np.pi, 10.4, 0.0, 0.0, 0.0, np.pi)
-        end_eff = joint_description('end_eff', 0.0, 13.4, 0.0, 0.0, 0.0, np.pi)
-
-        self.chain = Chain(
+        #chain of the links of manipulator
+        self.chain=Chain(
             name='my_manipulator',
-            links=[OriginLink(), joint1, joint2, joint3, end_eff]
+            links=[OriginLink(), joint1, joint2, joint3, endeff]
         )
 
-        self.get_logger().info("KinematicSolver node initialized. Waiting for coordinates...")
-
-    def object_callback(self, msg):
-        # Only compute IK if a new message arrives
-        if len(msg.data) < 2:
-            self.get_logger().warn("Received object_position message with insufficient data")
+    #defining callback for publishing joint angles after recieving coordinates
+    def send_angles(self,position):
+        if len(position.data)<2:
+            self.get_logger().error('incomplete coordinates')
             return
+        
 
-        x, y = msg.data[0], msg.data[1]
-        z = 3.0  # fixed height
+        # extracting the coordinates from camera
+        x=position.data[0]
+        y=position.data[1]
+        z=3.0
 
-        self.get_logger().info(f"New coordinate received: x={x}, y={y}, z={z}")
-
-        # Compute joint angles
+        # performing inverse kinamtic operation
         try:
-            joint_angles_rad = self.chain.inverse_kinematics([x, y, z])
-        except Exception as e:
-            self.get_logger().error(f"IK computation failed: {e}")
+            joint_angles=self.chain.inverse_kinematics([x,y,z])
+        except:
+            self.get_logger().warning('failed to solve kinematic equations')
             return
 
-        joint_angles_deg = [round(angle * 180 / np.pi, 3) for angle in joint_angles_rad]
+        # rad to degree conversion
+        joint_angles_degree=[]
+        i=0
+        for angle in joint_angles:
+            angle=round((angle*180/np.pi),3)
+            if i>0 and i<4:
+                joint_angles_degree.append(angle)
+            
+            i+=1
+        
+        # publishing joint angles to angles topic 
+        kinematic_result=Float32MultiArray()
+        kinematic_result.data=joint_angles_degree
 
-        # Publish joint angles **only once per new message**
-        msg_out = Float32MultiArray()
-        msg_out.data = joint_angles_deg
-        self.publisher_.publish(msg_out)
+        self.publisher.publish(kinematic_result)
 
-        self.get_logger().info(f"Published joint angles: {joint_angles_deg}")
+        self.get_logger().info(f"joint angles are : {joint_angles_degree}")
+        
+
+    # defining link parameters for ikpy to perform inverse kineamtics
+    def joint_description(self, joint_name:str, alpha: float, a: float, d: float, theta: float, lower_limit:   float, higher_limit: float):
+        for value in[alpha, a, d, theta, lower_limit, higher_limit]:
+            if not isinstance(value, float):
+                raise TypeError(f'{value} is not a float')
+            
+        joint_parameters=URDFLink(
+            name=joint_name,
+            origin_translation=[a,0,d],
+            origin_orientation=[alpha,0,theta],
+            rotation= [0, 0, 1],
+            bounds=[lower_limit,higher_limit]
+        )
+        
+        return joint_parameters
+
 
 def main(args=None):
     rclpy.init(args=args)
-    node = KinematicSolver()
+    node=kinematic_solver()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
-        node.get_logger().info("Shutting down KinematicSolver node...")
     finally:
         node.destroy_node()
         rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__=='__main__':
     main()
