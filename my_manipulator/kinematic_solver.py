@@ -24,7 +24,7 @@ class kinematic_solver(Node):
         self.subscription=self.create_subscription(Float32MultiArray, 'coordinates', self.send_angles,qos_profile)
         
         #publishing joint angles for trajectory
-        self.publisher=self.create_publisher(Float32MultiArray, 'joint_angles',qos_profile)
+        self.publisher=self.create_publisher(Float32MultiArray, 'angles',qos_profile)
 
         # defing joint parameters
         joint1=self.joint_description('joint1',  0.0    , 0.0 , 0.0, 0.0, 0.0, np.pi)
@@ -41,7 +41,8 @@ class kinematic_solver(Node):
     #defining callback for publishing joint angles after recieving coordinates
     def send_angles(self,position):
         if len(position.data)<2:
-            raise ValueError('incomplete coordinates')
+            self.get_logger().error('incomplete coordinates')
+            return
         
 
         # extracting the coordinates from camera
@@ -49,13 +50,14 @@ class kinematic_solver(Node):
         y=position.data[1]
         z=3.0
 
+        # performing inverse kinamtic operation
         try:
             joint_angles=self.chain.inverse_kinematics([x,y,z])
         except:
-            self.get_logger().warning('kinematic computation error')
+            self.get_logger().warning('failed to solve kinematic equations')
             return
 
-        # 
+        # rad to degree conversion
         joint_angles_degree=[]
         i=0
         for angle in joint_angles:
@@ -65,7 +67,7 @@ class kinematic_solver(Node):
             
             i+=1
         
-
+        # publishing joint angles to angles topic 
         kinematic_result=Float32MultiArray()
         kinematic_result.data=joint_angles_degree
 
@@ -74,7 +76,7 @@ class kinematic_solver(Node):
         self.get_logger().info(f"joint angles are : {joint_angles_degree}")
         
 
-
+    # defining link parameters for ikpy to perform inverse kineamtics
     def joint_description(self, joint_name:str, alpha: float, a: float, d: float, theta: float, lower_limit:   float, higher_limit: float):
         for value in[alpha, a, d, theta, lower_limit, higher_limit]:
             if not isinstance(value, float):
