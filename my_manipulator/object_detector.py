@@ -7,12 +7,18 @@ import cvzone
 import math
 from ultralytics import YOLO
 from std_msgs.msg import Bool
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 
 class object_detector(Node):
     def __init__(self):
         super().__init__("object_detector")
-        self.publisher=self.create_publisher(Float32MultiArray, 'coordinates',10)  
+        qos = QoSProfile(
+                        reliability=QoSReliabilityPolicy.RELIABLE,
+                        history=QoSHistoryPolicy.KEEP_LAST,
+                        depth=1
+                        )
+        self.publisher=self.create_publisher(Float32MultiArray, 'coordinates',1)  
 
         # checking arm status
         self.busy_status=False
@@ -57,13 +63,15 @@ class object_detector(Node):
                 cvzone.cornerRect(img,(x1,y1,w,h),l=8)
 
                 #proportion for equivalent distance on physical surface
-                sx=60/640   
-                sy=32/360
+                sx=59/640   
+                sy=33/360
                 xn=sx*(x1+x2)/2
                 yn=sy*(y1+y2)/2
-                X=30-xn
+                X=28-xn
                 Y=yn-5
-                print(X,Y)
+                self.get_logger().info(f'X:{X}, Y:{Y} ')
+                # X=16.0
+                # Y=5.0
 
                 # co ordinate message
                 position=Float32MultiArray()

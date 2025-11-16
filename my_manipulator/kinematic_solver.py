@@ -32,6 +32,8 @@ class kinematic_solver(Node):
         joint3=self.joint_description('joint3',  np.pi  , 10.4, 0.0, 0.0, 0.0, np.pi)
         endeff=self.joint_description('joint4',  0.0    , 13.4, 0.0, 0.0, 0.0, np.pi)
 
+        # 13.4
+
         #chain of the links of manipulator
         self.chain=Chain(
             name='my_manipulator',
@@ -48,7 +50,7 @@ class kinematic_solver(Node):
         # extracting the coordinates from camera
         x=position.data[0]
         y=position.data[1]
-        z=3.0
+        z=6.2
 
         # performing inverse kinamtic operation
         try:
